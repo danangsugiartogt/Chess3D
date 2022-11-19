@@ -35,9 +35,11 @@ public class ChessBoard : MonoBehaviour
     private Camera currentCamera;
     private Vector2Int currentHover;
     private Vector3 bounds;
+    private bool isWhiteTurn;
 
     void Awake()
     {
+        isWhiteTurn = true;
         GenerateAllTiles(tileSize, TILE_COUNT_X, TILE_COUNT_Y);
         SpawnAllPieces();
         PositionAllPieces();
@@ -76,12 +78,14 @@ public class ChessBoard : MonoBehaviour
 
             if (Input.GetMouseButtonDown(0))
             {
-                if(chessPieces[hitPosition.x, hitPosition.y] != null)
+                var cp = chessPieces[hitPosition.x, hitPosition.y];
+
+                if (cp != null)
                 {
                     // is my turn
-                    if (true)
+                    if ((cp.team == 0 && isWhiteTurn) || (cp.team == 1 && !isWhiteTurn))
                     {
-                        currentlyDragging = chessPieces[hitPosition.x, hitPosition.y];
+                        currentlyDragging = cp;
 
                         // Get list of place that i can go, and highlight it
                         availableMoves = currentlyDragging.GetAvailableMoves(ref chessPieces, TILE_COUNT_X, TILE_COUNT_Y);
@@ -167,6 +171,9 @@ public class ChessBoard : MonoBehaviour
             // If opponent
             if(otherCp.team == 0)
             {
+                if (otherCp.type == ChessPieceType.King)
+                    CheckMate(1);
+
                 deadWhites.Add(otherCp);
                 otherCp.SetScale(Vector3.one * deathSize);
                 otherCp.SetPosition(new Vector3(8 * tileSize, yOffset, -1 * tileSize)
@@ -176,6 +183,9 @@ public class ChessBoard : MonoBehaviour
             }
             else
             {
+                if (otherCp.type == ChessPieceType.King)
+                    CheckMate(0);
+
                 deadBlacks.Add(otherCp);
                 otherCp.SetScale(Vector3.one * deathSize);
                 otherCp.SetPosition(new Vector3(-1 * tileSize, yOffset, 8 * tileSize)
@@ -190,7 +200,14 @@ public class ChessBoard : MonoBehaviour
 
         PositionSinglePiece(x, y);
 
+        isWhiteTurn = !isWhiteTurn;
+
         return true;
+    }
+
+    private void CheckMate(int winningTeam)
+    {
+        Debug.Log(winningTeam == 0 ? "White team Win!!!" : "Black team Win!!!");
     }
 
     // Generate Board
@@ -256,7 +273,7 @@ public class ChessBoard : MonoBehaviour
 
         for(int i = 0; i < TILE_COUNT_X; i++)
         {
-            chessPieces[i, 1] = SpawnSinglePiece(ChessPieceType.Pawn, whiteTeam);
+            //chessPieces[i, 1] = SpawnSinglePiece(ChessPieceType.Pawn, whiteTeam);
         }
 
         // Black team
@@ -271,7 +288,7 @@ public class ChessBoard : MonoBehaviour
 
         for (int i = 0; i < TILE_COUNT_X; i++)
         {
-            chessPieces[i, 6] = SpawnSinglePiece(ChessPieceType.Pawn, blackTeam);
+            //chessPieces[i, 6] = SpawnSinglePiece(ChessPieceType.Pawn, blackTeam);
         }
     }
 
