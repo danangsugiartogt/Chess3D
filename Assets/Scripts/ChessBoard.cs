@@ -3,6 +3,14 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+public enum SpecialMove
+{
+    None = 0,
+    EnPassant,
+    Castling,
+    Promotion
+}
+
 public class ChessBoard : MonoBehaviour
 {
     private const int TILE_COUNT_X = 8;
@@ -36,6 +44,8 @@ public class ChessBoard : MonoBehaviour
     private Vector2Int currentHover;
     private Vector3 bounds;
     private bool isWhiteTurn;
+    private SpecialMove specialMove;
+    private List<Vector2Int[]> moveList = new List<Vector2Int[]>();
 
     void Awake()
     {
@@ -89,6 +99,9 @@ public class ChessBoard : MonoBehaviour
 
                         // Get list of place that i can go, and highlight it
                         availableMoves = currentlyDragging.GetAvailableMoves(ref chessPieces, TILE_COUNT_X, TILE_COUNT_Y);
+                        // Get list of special moves
+                        specialMove = currentlyDragging.GetSpecialMoves(ref chessPieces, ref moveList, ref availableMoves);
+
                         HighlightTiles();
                     }
                 }
@@ -155,7 +168,7 @@ public class ChessBoard : MonoBehaviour
 
     private bool MoveTo(ChessPiece cp, int x, int y)
     {
-        if (!ContainsValidMove(ref availableMoves, new Vector2(x, y)))
+        if (!ContainsValidMove(ref availableMoves, new Vector2Int(x, y)))
             return false;
 
         Vector2Int previousPosition = new Vector2Int(cp.currentX, cp.currentY);
@@ -174,24 +187,14 @@ public class ChessBoard : MonoBehaviour
                 if (otherCp.type == ChessPieceType.King)
                     CheckMate(1);
 
-                deadWhites.Add(otherCp);
-                otherCp.SetScale(Vector3.one * deathSize);
-                otherCp.SetPosition(new Vector3(8 * tileSize, yOffset, -1 * tileSize)
-                    - bounds
-                    + new Vector3(tileSize / 2, 0, tileSize / 2)
-                    + (Vector3.forward * deathSpacing) * deadWhites.Count);
+                SetDeathPositionAndScalePiece(otherCp, isWhiteKilled: false);
             }
             else
             {
                 if (otherCp.type == ChessPieceType.King)
                     CheckMate(0);
 
-                deadBlacks.Add(otherCp);
-                otherCp.SetScale(Vector3.one * deathSize);
-                otherCp.SetPosition(new Vector3(-1 * tileSize, yOffset, 8 * tileSize)
-                    - bounds
-                    + new Vector3(tileSize / 2, 0, tileSize / 2)
-                    + (Vector3.back * deathSpacing) * deadBlacks.Count);
+                SetDeathPositionAndScalePiece(otherCp, isWhiteKilled: true);
             }
         }
 
@@ -201,8 +204,33 @@ public class ChessBoard : MonoBehaviour
         PositionSinglePiece(x, y);
 
         isWhiteTurn = !isWhiteTurn;
+        moveList.Add(new Vector2Int[] { previousPosition, new Vector2Int(x, y) });
+
+        ProcessSpecialMove();
 
         return true;
+    }
+
+    private void SetDeathPositionAndScalePiece(ChessPiece chessPiece, bool isWhiteKilled)
+    {
+        if (isWhiteKilled)
+        {
+            deadWhites.Add(chessPiece);
+            chessPiece.SetScale(Vector3.one * deathSize);
+            chessPiece.SetPosition(new Vector3(8 * tileSize, yOffset, -1 * tileSize)
+                - bounds
+                + new Vector3(tileSize / 2, 0, tileSize / 2)
+                + (Vector3.forward * deathSpacing) * deadWhites.Count);
+        }
+        else
+        {
+            deadBlacks.Add(chessPiece);
+            chessPiece.SetScale(Vector3.one * deathSize);
+            chessPiece.SetPosition(new Vector3(-1 * tileSize, yOffset, 8 * tileSize)
+                - bounds
+                + new Vector3(tileSize / 2, 0, tileSize / 2)
+                + (Vector3.back * deathSpacing) * deadBlacks.Count);
+        }
     }
 
     private void CheckMate(int winningTeam)
@@ -273,7 +301,7 @@ public class ChessBoard : MonoBehaviour
 
         for(int i = 0; i < TILE_COUNT_X; i++)
         {
-            //chessPieces[i, 1] = SpawnSinglePiece(ChessPieceType.Pawn, whiteTeam);
+            chessPieces[i, 1] = SpawnSinglePiece(ChessPieceType.Pawn, whiteTeam);
         }
 
         // Black team
@@ -288,7 +316,7 @@ public class ChessBoard : MonoBehaviour
 
         for (int i = 0; i < TILE_COUNT_X; i++)
         {
-            //chessPieces[i, 6] = SpawnSinglePiece(ChessPieceType.Pawn, blackTeam);
+            chessPieces[i, 6] = SpawnSinglePiece(ChessPieceType.Pawn, blackTeam);
         }
     }
 
@@ -302,6 +330,31 @@ public class ChessBoard : MonoBehaviour
         cp.team = team;
 
         return cp;
+    }
+
+    // Special Moves
+    private void ProcessSpecialMove()
+    {
+        if(specialMove == SpecialMove.EnPassant)
+        {
+            var newMove = moveList[moveList.Count - 1];
+            var myPawn = chessPieces[newMove[1].x, newMove[1].y];
+            var targetPawnPosition = moveList[moveList.Count - 2];
+            var enemyPawn = chessPieces[targetPawnPosition[1].x, targetPawnPosition[1].y];
+
+            if(myPawn.currentX == enemyPawn.currentX)
+            {
+                if(myPawn.currentY == enemyPawn.currentY - 1 || myPawn.currentY == enemyPawn.currentY + 1)
+                {
+                    if(enemyPawn.team == 0)
+                        SetDeathPositionAndScalePiece(enemyPawn, isWhiteKilled: false);
+                    else
+                        SetDeathPositionAndScalePiece(enemyPawn, isWhiteKilled: true);
+                }
+
+                chessPieces[enemyPawn.currentX, enemyPawn.currentY] = null;
+            }
+        }
     }
 
     // Positioning the pieces
