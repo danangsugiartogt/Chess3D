@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 public enum SpecialMove
@@ -531,10 +532,113 @@ public class ChessBoard : MonoBehaviour
         return false;
     }
 
+    private void MoveAI()
+    {
+        List<ChessPiece> defendingPieces = new List<ChessPiece>();
+        List<ChessPiece> attackingPieces = new List<ChessPiece>();
+        ChessPiece king = null;
+
+        for (int x = 0; x < TILE_COUNT_X; x++)
+        {
+            for (int y = 0; y < TILE_COUNT_Y; y++)
+            {
+                if (chessPieces[x, y] != null)
+                {
+                    if (chessPieces[x, y].team == 0)
+                    {
+                        attackingPieces.Add(chessPieces[x, y]);
+                    }
+                    else
+                    {
+                        defendingPieces.Add(chessPieces[x, y]);
+                        if (chessPieces[x, y].type == ChessPieceType.King)
+                            king = chessPieces[x, y];
+                    }
+                }
+            }
+        }
+
+        // Is the king attacked ?
+        List<Vector2Int> currentAvailableMoves = new List<Vector2Int>();
+        for (int i = 0; i < attackingPieces.Count; i++)
+        {
+            var pieceMoves = attackingPieces[i].GetAvailableMoves(ref chessPieces, TILE_COUNT_X, TILE_COUNT_Y);
+            for (int j = 0; j < pieceMoves.Count; j++)
+            {
+                currentAvailableMoves.Add(pieceMoves[j]);
+            }
+        }
+
+        // Are we in check right now?
+        if (ContainsValidMove(ref currentAvailableMoves, new Vector2Int(king.currentX, king.currentY)))
+        {
+            // King is under attack, can we move something to help him?
+            for (int i = 0; i < attackingPieces.Count; i++)
+            {
+                List<Vector2Int> defendingMoves = attackingPieces[i].GetAvailableMoves(ref chessPieces, TILE_COUNT_X, TILE_COUNT_Y);
+                // since we are sending ref availableMoves, we will be deleting moves that are putting us in check
+                SimulateMoveForSinglePiece(attackingPieces[i], ref defendingMoves, king);
+            }
+
+            CheckMate(0); // Checkmate, white team win
+        }
+
+        // Collect defending pieces that contains available moves
+        Dictionary<ChessPiece, List<Vector2Int>> defendingPiecesContainsAvailableMoves = new Dictionary<ChessPiece, List<Vector2Int>>();
+        Dictionary<ChessPiece, Vector2Int> defendingPiecesContainsAvailableMoveAndKill = new Dictionary<ChessPiece, Vector2Int>();
+        for (int i = 0; i < defendingPieces.Count; i++)
+        {
+            List<Vector2Int> defendingMoves = defendingPieces[i].GetAvailableMoves(ref chessPieces, TILE_COUNT_X, TILE_COUNT_Y);
+
+            if(defendingMoves.Count > 0)
+            {
+                for(int j = 0; j < defendingMoves.Count; j++)
+                {
+                    var pos = defendingMoves[j];
+                    bool canKill = false;
+
+                    for(int k = 0; k < attackingPieces.Count; k++)
+                    {
+                        if(attackingPieces[k].currentX == pos.x && attackingPieces[k].currentY == pos.y)
+                        {
+                            if(!defendingPiecesContainsAvailableMoves.ContainsKey(defendingPieces[i]))
+                                defendingPiecesContainsAvailableMoveAndKill.Add(defendingPieces[i], defendingMoves[j]);
+
+                            canKill = true;
+                            break;
+                        }
+                    }
+
+                    if(!canKill && !defendingPiecesContainsAvailableMoves.ContainsKey(defendingPieces[i]))
+                        defendingPiecesContainsAvailableMoves.Add(defendingPieces[i], defendingMoves);
+                }
+            }
+        }
+
+        // Move to kill
+        if(defendingPiecesContainsAvailableMoveAndKill.Count > 0)
+        {
+            int rand = UnityEngine.Random.Range(0, defendingPiecesContainsAvailableMoveAndKill.Count - 1);
+            var cp = defendingPiecesContainsAvailableMoveAndKill.Keys.ElementAt(rand);
+            var move = defendingPiecesContainsAvailableMoveAndKill[cp];
+
+            MoveTo(cp, move.x, move.y);
+        }
+        // Free to move
+        else
+        {
+            int rand = UnityEngine.Random.Range(0, defendingPiecesContainsAvailableMoves.Count - 1);
+            var cp = defendingPiecesContainsAvailableMoves.Keys.ElementAt(rand);
+            var moves = defendingPiecesContainsAvailableMoves[cp];
+
+            MoveTo(cp, moves[0].x, moves[0].y);
+        }
+    }
+
     // Operations
     private bool MoveTo(ChessPiece cp, int x, int y)
     {
-        if (!ContainsValidMove(ref availableMoves, new Vector2Int(x, y)))
+        if (!ContainsValidMove(ref availableMoves, new Vector2Int(x, y)) && cp.team == 0)
             return false;
 
         Vector2Int previousPosition = new Vector2Int(cp.currentX, cp.currentY);
@@ -571,6 +675,7 @@ public class ChessBoard : MonoBehaviour
 
         isWhiteTurn = !isWhiteTurn;
         moveList.Add(new Vector2Int[] { previousPosition, new Vector2Int(x, y) });
+        if (!isWhiteTurn) MoveAI();
 
         ProcessSpecialMove();
 
