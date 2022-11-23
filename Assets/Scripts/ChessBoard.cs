@@ -2,7 +2,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 public enum SpecialMove
 {
@@ -19,6 +21,11 @@ public class ChessBoard : MonoBehaviour
     private const string HOVER_LAYER = "Hover";
     private const string TILE_LAYER = "Tile";
     private const string HIGHLIGHT_LAYER = "Highlight";
+
+    [Header("UI")]
+    [SerializeField] private GameObject panel;
+    [SerializeField] private GameObject staticButtonExit;
+    [SerializeField] private TMP_Text text;
 
     [Header("Material")]
     [SerializeField] private Material tileMaterial;
@@ -47,6 +54,7 @@ public class ChessBoard : MonoBehaviour
     private bool isWhiteTurn;
     private SpecialMove specialMove;
     private List<Vector2Int[]> moveList = new List<Vector2Int[]>();
+    private bool isGameFinished = false;
 
     void Awake()
     {
@@ -64,6 +72,8 @@ public class ChessBoard : MonoBehaviour
             currentCamera = Camera.main;
             return;
         }
+
+        if (isGameFinished) return;
 
         RaycastHit hit;
         Ray ray = currentCamera.ScreenPointToRay(Input.mousePosition);
@@ -94,7 +104,7 @@ public class ChessBoard : MonoBehaviour
                 if (cp != null)
                 {
                     // is my turn
-                    if ((cp.team == 0 && isWhiteTurn) || (cp.team == 1 && !isWhiteTurn))
+                    if (cp.team == 0)
                     {
                         currentlyDragging = cp;
 
@@ -173,7 +183,8 @@ public class ChessBoard : MonoBehaviour
     }
     private void CheckMate(int winningTeam)
     {
-        Debug.Log(winningTeam == 0 ? "White team Win!!!" : "Black team Win!!!");
+        isGameFinished = true;
+        ShowWinPanel(winningTeam);
     }
 
     // Highlight Tiles
@@ -255,7 +266,7 @@ public class ChessBoard : MonoBehaviour
         chessPieces[6, 0] = SpawnSinglePiece(ChessPieceType.Knight, whiteTeam);
         chessPieces[7, 0] = SpawnSinglePiece(ChessPieceType.Rook, whiteTeam);
 
-        for(int i = 0; i < TILE_COUNT_X; i++)
+        for (int i = 0; i < TILE_COUNT_X; i++)
         {
             chessPieces[i, 1] = SpawnSinglePiece(ChessPieceType.Pawn, whiteTeam);
         }
@@ -532,11 +543,13 @@ public class ChessBoard : MonoBehaviour
         return false;
     }
 
+    // AI
     private void MoveAI()
     {
         List<ChessPiece> defendingPieces = new List<ChessPiece>();
         List<ChessPiece> attackingPieces = new List<ChessPiece>();
-        ChessPiece king = null;
+        ChessPiece defendingKing = null;
+        ChessPiece attackingKing = null;
 
         for (int x = 0; x < TILE_COUNT_X; x++)
         {
@@ -547,12 +560,14 @@ public class ChessBoard : MonoBehaviour
                     if (chessPieces[x, y].team == 0)
                     {
                         attackingPieces.Add(chessPieces[x, y]);
+                        if (chessPieces[x, y].type == ChessPieceType.King)
+                            attackingKing = chessPieces[x, y];
                     }
                     else
                     {
                         defendingPieces.Add(chessPieces[x, y]);
                         if (chessPieces[x, y].type == ChessPieceType.King)
-                            king = chessPieces[x, y];
+                            defendingKing = chessPieces[x, y];
                     }
                 }
             }
@@ -563,24 +578,36 @@ public class ChessBoard : MonoBehaviour
         for (int i = 0; i < attackingPieces.Count; i++)
         {
             var pieceMoves = attackingPieces[i].GetAvailableMoves(ref chessPieces, TILE_COUNT_X, TILE_COUNT_Y);
-            for (int j = 0; j < pieceMoves.Count; j++)
+
+            if(pieceMoves.Count > 0)
             {
-                currentAvailableMoves.Add(pieceMoves[j]);
+                for (int j = 0; j < pieceMoves.Count; j++)
+                {
+                    currentAvailableMoves.Add(pieceMoves[j]);
+                }
             }
         }
 
         // Are we in check right now?
-        if (ContainsValidMove(ref currentAvailableMoves, new Vector2Int(king.currentX, king.currentY)))
+        if (ContainsValidMove(ref currentAvailableMoves, new Vector2Int(defendingKing.currentX, defendingKing.currentY)))
         {
+            bool isCheckMate = true;
             // King is under attack, can we move something to help him?
-            for (int i = 0; i < attackingPieces.Count; i++)
+            for (int i = 0; i < defendingPieces.Count; i++)
             {
-                List<Vector2Int> defendingMoves = attackingPieces[i].GetAvailableMoves(ref chessPieces, TILE_COUNT_X, TILE_COUNT_Y);
-                // since we are sending ref availableMoves, we will be deleting moves that are putting us in check
-                SimulateMoveForSinglePiece(attackingPieces[i], ref defendingMoves, king);
+                List<Vector2Int> defendingMoves = defendingPieces[i].GetAvailableMoves(ref chessPieces, TILE_COUNT_X, TILE_COUNT_Y);
+
+                SimulateMoveForSinglePiece(defendingPieces[i], ref defendingMoves, defendingKing);
+
+                if (defendingMoves.Count > 0)
+                {
+                    isCheckMate = false;
+                    break;
+                }
             }
 
-            CheckMate(0); // Checkmate, white team win
+            if(isCheckMate)
+                CheckMate(0); // Checkmate, white team win
         }
 
         // Collect defending pieces that contains available moves
@@ -590,9 +617,11 @@ public class ChessBoard : MonoBehaviour
         {
             List<Vector2Int> defendingMoves = defendingPieces[i].GetAvailableMoves(ref chessPieces, TILE_COUNT_X, TILE_COUNT_Y);
 
-            if(defendingMoves.Count > 0)
+            SimulateMoveForSinglePiece(defendingPieces[i], ref defendingMoves, defendingKing);
+
+            if (defendingMoves.Count > 0)
             {
-                for(int j = 0; j < defendingMoves.Count; j++)
+                for (int j = 0; j < defendingMoves.Count; j++)
                 {
                     var pos = defendingMoves[j];
                     bool canKill = false;
@@ -601,7 +630,7 @@ public class ChessBoard : MonoBehaviour
                     {
                         if(attackingPieces[k].currentX == pos.x && attackingPieces[k].currentY == pos.y)
                         {
-                            if(!defendingPiecesContainsAvailableMoves.ContainsKey(defendingPieces[i]))
+                            if(!defendingPiecesContainsAvailableMoveAndKill.ContainsKey(defendingPieces[i]))
                                 defendingPiecesContainsAvailableMoveAndKill.Add(defendingPieces[i], defendingMoves[j]);
 
                             canKill = true;
@@ -627,12 +656,36 @@ public class ChessBoard : MonoBehaviour
         // Free to move
         else
         {
-            int rand = UnityEngine.Random.Range(0, defendingPiecesContainsAvailableMoves.Count - 1);
-            var cp = defendingPiecesContainsAvailableMoves.Keys.ElementAt(rand);
-            var moves = defendingPiecesContainsAvailableMoves[cp];
+            if(defendingPiecesContainsAvailableMoves.Count > 0)
+            {
+                int rand = UnityEngine.Random.Range(0, defendingPiecesContainsAvailableMoves.Count - 1);
+                var cp = defendingPiecesContainsAvailableMoves.Keys.ElementAt(rand);
+                var moves = defendingPiecesContainsAvailableMoves[cp];
 
-            MoveTo(cp, moves[0].x, moves[0].y);
+                MoveTo(cp, moves[0].x, moves[0].y);
+            }
+            else
+            {
+                CheckMate(0);
+            }
         }
+
+        // Check mate to white team
+        bool checkMate = true;
+        for (int i = 0; i < attackingPieces.Count; i++)
+        {
+            var pieceMoves = attackingPieces[i].GetAvailableMoves(ref chessPieces, TILE_COUNT_X, TILE_COUNT_Y);
+
+            SimulateMoveForSinglePiece(attackingPieces[i], ref pieceMoves, attackingKing);
+
+            if (pieceMoves.Count != 0)
+            {
+                checkMate = false;
+                break;
+            }
+        }
+
+        if (checkMate) CheckMate(1);
     }
 
     // Operations
@@ -643,7 +696,7 @@ public class ChessBoard : MonoBehaviour
 
         Vector2Int previousPosition = new Vector2Int(cp.currentX, cp.currentY);
 
-        // Is there another piece on the target positio?
+        // Is there another piece on the target position?
         if (chessPieces[x, y] != null)
         {
             ChessPiece otherCp = chessPieces[x, y];
@@ -655,14 +708,18 @@ public class ChessBoard : MonoBehaviour
             if (otherCp.team == 0)
             {
                 if (otherCp.type == ChessPieceType.King)
+                {
                     CheckMate(1);
-
+                }
+                    
                 SetDeathPositionAndScalePiece(otherCp, isWhiteKilled: false);
             }
             else
             {
                 if (otherCp.type == ChessPieceType.King)
+                {
                     CheckMate(0);
+                }
 
                 SetDeathPositionAndScalePiece(otherCp, isWhiteKilled: true);
             }
@@ -674,13 +731,15 @@ public class ChessBoard : MonoBehaviour
         PositionSinglePiece(x, y);
 
         isWhiteTurn = !isWhiteTurn;
+
         moveList.Add(new Vector2Int[] { previousPosition, new Vector2Int(x, y) });
-        if (!isWhiteTurn) MoveAI();
+        if (!isWhiteTurn && !isGameFinished) MoveAI();
 
         ProcessSpecialMove();
 
-        if (CheckForCheckMate())
-            CheckMate(cp.team);
+        if (!isGameFinished)
+            if (CheckForCheckMate())
+                CheckMate(cp.team);
 
         return true;
     }
@@ -737,4 +796,25 @@ public class ChessBoard : MonoBehaviour
         return false;
     }
 
+    // UI
+    private void ShowWinPanel(int winningTeam)
+    {
+        if (winningTeam == 0)
+            text.text = "White team wins!";
+        else
+            text.text = "Black team wins!";
+
+        panel.SetActive(true);
+        staticButtonExit.SetActive(false);
+    }
+
+    public void RestartGame()
+    {
+        UnityEngine.SceneManagement.SceneManager.LoadScene("Gameplay");
+    }
+
+    public void ExitGame()
+    {
+        Application.Quit();
+    }
 }
