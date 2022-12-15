@@ -6,6 +6,7 @@
 
 </div>
 
+![image](https://user-images.githubusercontent.com/34335647/207780985-131f5b05-b2a5-4bb5-810d-b6dd3776e45a.png)
 ---
 
 <p align="center"> A simple chess game 3D with AI. 
